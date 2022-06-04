@@ -405,7 +405,22 @@ stop() {
         setup_iptables default
 
         printf "%s\\n" "Stop Tor service"
-        service tor stop
+        #Work around for kali-docker - clean stop
+        service tor stop 
+        export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 3)"
+        if [ -n tor_pid ]; then
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+            export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 4)"
+        elif [ '' -n $tor_pid] ] ; then
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+            export tor_pid="$(cat /var/run/tor/tor.pid)"
+        elif [ '' -n $tor_pid] ] ; then
+            export tor_pid="$(cat /var/run/tor/tor.pid)"
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+        fi
 
         # restore /etc/resolv.conf:
         #
@@ -446,7 +461,24 @@ restart() {
     if service tor status >/dev/null 2>&1; then
         info "Change IP address"
 
-        service tor restart
+        #Work around for kali-docker - clean restart
+        service tor stop 
+        export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 3)"
+        if [ -n tor_pid ]; then
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+            export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 4)"
+        elif [ '' -n $tor_pid] ] ; then
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+            export tor_pid="$(cat /var/run/tor/tor.pid)"
+        elif [ '' -n $tor_pid] ] ; then
+            export tor_pid="$(cat /var/run/tor/tor.pid)"
+            printf "%s\\n" "Stopping Tor process,$tor_pid"
+            kill -9 $tor_pid
+        fi
+        service tor start
+
         sleep 1
         check_ip
         exit 0
