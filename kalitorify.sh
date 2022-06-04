@@ -71,6 +71,7 @@ readonly virtual_address="10.192.0.0/10"
 # LAN destinations that shouldn't be routed through Tor
 readonly non_tor="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 
+#set -x
 
 ## Show program banner
 banner() {
@@ -182,8 +183,8 @@ setup_general() {
     printf "%s\\n" "nameserver 127.0.0.1" > /etc/resolv.conf
 
     # reload systemd daemons
-    printf "%s\\n" "Reload systemd daemons"
-    systemctl --system daemon-reload
+   # printf "%s\\n" "Reload systemd daemons"
+   # systemctl --system daemon-reload
 }
 
 
@@ -315,13 +316,13 @@ check_ip() {
 
 ## Check status of program and services
 #
-# - tor.service
+# - tor
 # - tor settings (check if Tor works correctly)
 # - public IP Address
 check_status() {
     info "Check current status of Tor service"
 
-    if systemctl is-active tor.service >/dev/null 2>&1; then
+    if service tor status  >/dev/null 2>&1; then
         msg "Tor service is active"
     else
         die "Tor service is not running! exit"
@@ -354,8 +355,8 @@ check_status() {
 start() {
     check_root
 
-    # Exit if tor.service is already active
-    if systemctl is-active tor.service >/dev/null 2>&1; then
+    # Exit if tor is already active
+    if service tor status >/dev/null 2>&1; then
         die "Tor service is already active, stop it first"
     fi
 
@@ -371,11 +372,11 @@ start() {
     sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
     sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
 
-    # start tor.service
+    # start tor
     printf "%s\\n" "Start Tor service"
 
-    if ! systemctl start tor.service >/dev/null 2>&1; then
-        die "can't start tor service, exit!"
+    if ! service tor start >/dev/null 2>&1; then
+        die "can't start tor, exit!"
     fi
 
     # set new iptables rules
@@ -396,15 +397,15 @@ start() {
 stop() {
     check_root
 
-    # don't run function if tor.service is NOT running!
-    if systemctl is-active tor.service >/dev/null 2>&1; then
+    # don't run function if tor is NOT running!
+    if service tor status  >/dev/null 2>&1; then
         info "Stopping Transparent Proxy"
 
         # resets default iptables rules
         setup_iptables default
 
-        printf "%s\\n" "Stop tor service"
-        systemctl stop tor.service
+        printf "%s\\n" "Stop Tor service"
+        service tor stop
 
         # restore /etc/resolv.conf:
         #
@@ -437,15 +438,15 @@ stop() {
 
 ## Restart
 #
-# restart tor.service (i.e. get new Tor exit node)
+# restart tor (i.e. get new Tor exit node)
 # and change public IP Address
 restart() {
     check_root
 
-    if systemctl is-active tor.service >/dev/null 2>&1; then
+    if service tor status >/dev/null 2>&1; then
         info "Change IP address"
 
-        systemctl restart tor.service
+        service tor restart
         sleep 1
         check_ip
         exit 0
