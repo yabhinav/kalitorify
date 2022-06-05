@@ -57,7 +57,10 @@ readonly backup_dir="/var/lib/kalitorify/backups"   # backups
 #
 # the UID that Tor runs as (varies from system to system)
 # $(id -u debian-tor) #Debian/Ubuntu
-readonly tor_uid="$(id -u debian-tor)"
+readonly tor_user="debian-tor"
+readonly tor_uid="$(id -u $tor_user)"
+readonly tor_pid_dir="/var/run/tor/"
+readonly tor_pid_file="/var/run/tor/tor.pid"
 
 # Tor TransPort
 readonly trans_port="9040"
@@ -70,8 +73,6 @@ readonly virtual_address="10.192.0.0/10"
 
 # LAN destinations that shouldn't be routed through Tor
 readonly non_tor="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
-
-#set -x
 
 ## Show program banner
 banner() {
@@ -124,6 +125,43 @@ print_version() {
     printf "%s\\n" "This is free software: you are free to change and redistribute it."
     printf "%s\\n" "There is NO WARRANTY, to the extent permitted by law."
     exit 0
+}
+
+#################################
+## Tor Service Helper functions #
+#################################
+check_tor() {
+export tor_pid="$(ps -C "tor" -o pid | grep -v "PID" | tail -1 | xargs)"
+if [[ `service tor status  >/dev/null 2>&1` ]] || [[ -n "$tor_pid" ]] ; then
+    mkdir -p "$tor_pid_dir"
+    echo "$tor_pid" > "$tor_pid_file"
+    chown -R "$tor_user:" "$tor_pid_dir"
+    return 0
+else
+    return 1
+fi
+}
+
+stop_tor() {
+export tor_pid="$(ps -C "tor" -o pid | grep -v "PID" | tail -1 | xargs)"
+if [[ -n "$tor_pid" ]] ; then    
+    service tor stop
+    sleep 1
+    kill -9 "$tor_pid" 
+    echo -n > "$tor_pid_file"
+    chown -R "$tor_user:" "$tor_pid_dir"
+fi
+}
+
+start_tor() {
+service tor start
+sleep 1
+export tor_pid="$(ps -C "tor" -o pid | grep -v "PID" | tail -1 | xargs)"
+if [[ -n "$tor_pid" ]] ; then
+    mkdir -p "$tor_pid_dir"
+    echo "$tor_pid" > "$tor_pid_file"
+    chown -R "$tor_user:" "$tor_pid_dir"
+fi
 }
 
 
@@ -322,7 +360,7 @@ check_ip() {
 check_status() {
     info "Check current status of Tor service"
 
-    if service tor status  >/dev/null 2>&1; then
+    if check_tor  >/dev/null 2>&1; then
         msg "Tor service is active"
     else
         die "Tor service is not running! exit"
@@ -356,7 +394,7 @@ start() {
     check_root
 
     # Exit if tor is already active
-    if service tor status >/dev/null 2>&1; then
+    if check_tor >/dev/null 2>&1; then
         die "Tor service is already active, stop it first"
     fi
 
@@ -375,7 +413,7 @@ start() {
     # start tor
     printf "%s\\n" "Start Tor service"
 
-    if ! service tor start >/dev/null 2>&1; then
+    if ! start_tor >/dev/null 2>&1; then
         die "can't start tor, exit!"
     fi
 
@@ -398,29 +436,14 @@ stop() {
     check_root
 
     # don't run function if tor is NOT running!
-    if service tor status  >/dev/null 2>&1; then
+    if check_tor ; then
         info "Stopping Transparent Proxy"
 
         # resets default iptables rules
         setup_iptables default
 
         printf "%s\\n" "Stop Tor service"
-        #Work around for kali-docker - clean stop
-        service tor stop 
-        export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 3)"
-        if [ -n tor_pid ]; then
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-            export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 4)"
-        elif [ '' -n $tor_pid] ] ; then
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-            export tor_pid="$(cat /var/run/tor/tor.pid)"
-        elif [ '' -n $tor_pid] ] ; then
-            export tor_pid="$(cat /var/run/tor/tor.pid)"
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-        fi
+        stop_tor
 
         # restore /etc/resolv.conf:
         #
@@ -462,22 +485,8 @@ restart() {
         info "Change IP address"
 
         #Work around for kali-docker - clean restart
-        service tor stop 
-        export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 3)"
-        if [ -n tor_pid ]; then
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-            export tor_pid="$(ps -ef | grep /usr/bin/tor | grep -v grep | cut -d ' ' -f 4)"
-        elif [ '' -n $tor_pid] ] ; then
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-            export tor_pid="$(cat /var/run/tor/tor.pid)"
-        elif [ '' -n $tor_pid] ] ; then
-            export tor_pid="$(cat /var/run/tor/tor.pid)"
-            printf "%s\\n" "Stopping Tor process,$tor_pid"
-            kill -9 $tor_pid
-        fi
-        service tor start
+        stop_tor
+        start_tor
 
         sleep 1
         check_ip
@@ -522,7 +531,7 @@ main() {
         printf "%s\\n" "Try '${prog_name} --help' for more information."
         exit 1
     fi
-
+    
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
             -t | --tor)
